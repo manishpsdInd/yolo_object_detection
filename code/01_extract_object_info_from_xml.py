@@ -1,28 +1,64 @@
 from glob import glob
 import pandas as pd
 from xml.etree import ElementTree as et
+from config import region
+import os
+from glob import glob
+from ultralytics import YOLO as yolo
+
+import cv2
+import pandas as pd
+import numpy as np
+from functools import reduce
+from xml.etree import ElementTree as et
+from config import region
+from shutil import move
+# Testing for multiple images
+import random
+from IPython.display import Image, display
 
 
-xml_list = glob('/Users/manis/workspace/py/data/data_images/*.xml')
-len(xml_list)
+src_path = region + '/data/data_images'
+jpg_image_list = glob(src_path + '/*.jpg')
 
-parser1=[]
-for img_details in xml_list:
-    tree1 = et.parse(img_details)
-    root1 = tree1.getroot()
-    objs1 = root1.findall('object')
-    image_name1 = root1.find('filename').text
-    width1 = root1.find('size').find('width').text
-    height1 = root1.find('size').find('height').text
-    for obj1 in objs1:
-        name1 = obj1.find('name').text
-        bndbox1 = obj1.find('bndbox')
-        xmin1 = bndbox1.find('xmin').text
-        xmax1 = bndbox1.find('xmax').text
-        ymin1 = bndbox1.find('ymin').text
-        ymax1 = bndbox1.find('ymax').text
-        parser1.append([image_name1, width1, height1, name1, xmin1, ymin1, xmax1, ymax1])
-df = pd.DataFrame(parser1, columns=['filename', 'width', 'height', 'name', 'xmin', 'ymin', 'xmax', 'ymax'])
+random_items = random.sample(jpg_image_list, 10)
 
-df.shape
-df.head(10)
+for image_file in random_items:
+    image = cv2.imread(image_file)
+    output_filename = os.path.basename(image_file)
+
+    row, col, d = image.shape
+    max_rc = max(row, col)
+
+    input_image = np.zeros((max_rc, max_rc, 3), dtype=np.uint8)
+    input_image[0:row, 0:col] = image
+
+    INPUT_WIDTH_YOLO = 640
+    blob = cv2.dnn.blobFromImage(input_image, 1/255, (INPUT_WIDTH_YOLO,INPUT_WIDTH_YOLO), swapRB=True, crop=False)
+
+    model = yolo('yolov8n.pt')
+    results = model(image)
+
+#########
+
+    for result in results:
+        boxes = result.boxes.cpu().numpy()
+        names = result.names
+
+        for box in boxes:
+            xyxy = box.xyxy.astype(int)[0]
+            confidence = box.conf[0]
+            class_id = box.cls[0]
+            class_name = names[class_id]
+
+            cv2.rectangle(image, (xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]), (0, 255, 0), 2)
+
+            label = f'{class_name}: {confidence:.2f}'
+            cv2.putText(image, label, (xyxy[0], xyxy[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    #output_file = 'detected_image_000035.jpg'
+    #cv2.imwrite(output_file, image)
+    display(Image(image))
+
+    #cv2.imwrite(output_file, image)
+    #display(Image(filename = imageName))
